@@ -19,7 +19,7 @@ set_property(CACHE PROJECT_TOPIC PROPERTY STRINGS NOT_SELECTED QRCODE VIGENERE
 if(PROJECT_TOPIC STREQUAL NOT_SELECTED)
   message(FATAL_ERROR "Please select a topic.")
 elseif(PROJECT_TOPIC STREQUAL QRCODE)
-  # add_subdirectory(qrcode)
+  add_subdirectory(qrcode)
 elseif(PROJECT_TOPIC STREQUAL VIGENERE)
   add_subdirectory(vigenere)
 elseif(PROJECT_TOPIC STREQUAL PI)
