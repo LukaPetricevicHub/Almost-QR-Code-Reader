@@ -10,7 +10,7 @@ Implemented behavior:
 
 - Reads QR data modules in the standard zig-zag order.
 - Skips function modules manually.
-- Tries all 8 QR masks.
+- Reads the mask pattern from the QR format information.
 - Decodes numeric mode, alphanumeric mode, and byte mode for printable ASCII.
 
 ## Output
@@ -18,8 +18,8 @@ Implemented behavior:
 The program intentionally prints development output while the decoder is being built. Current output includes:
 
 - the converted QR code 
-- the first 16 data bits for each mask,
-- the decoded message on the mask line that produces a valid message.
+- the first 16 data bits for the mask stored in the format information,
+- the decoded message on the mask line.
 
 ## Usage
 

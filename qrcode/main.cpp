@@ -2,7 +2,9 @@
 #include <HybridBinarizer.h>
 #include <ZXingCpp.h>
 
+#include <array>
 #include <iostream>
+#include <memory>
 #include <print>
 #include <ranges>
 #include <string>
@@ -91,6 +93,32 @@ int main(int argc, char** argv) {
             default:
                 return false;
         }
+    };
+
+    auto readMaskFromFormatInformation = [bitmap = bitmap.get()] {
+        // QR format bits stored XORed
+        constexpr int formatInformationMask = 0b101010000010010;
+
+        auto formatBits = 0;
+        auto setFormatBit = [bitmap, &formatBits](int bitIndex, int x, int y) {
+            if (bitmap->get(x, y)) {
+                formatBits |= 1 << bitIndex;
+            }
+        };
+
+        for (auto i : std::views::iota(0, 6)) {
+            setFormatBit(i, 8, i);
+        }
+        setFormatBit(6, 8, 7);
+        setFormatBit(7, 8, 8);
+        setFormatBit(8, 7, 8);
+
+        for (auto i : std::views::iota(9, 15)) {
+            setFormatBit(i, 14 - i, 8);
+        }
+
+        auto unmaskedFormatBits = formatBits ^ formatInformationMask;
+        return (unmaskedFormatBits >> 10) & 0b111;
     };
 
     auto readBits = [](const std::string& bits, int& position, int count) {
@@ -222,48 +250,47 @@ int main(int argc, char** argv) {
         return message;
     };
 
-    for (int mask = 0; mask < 8; ++mask) {
-        std::string bits;
-        bits.reserve(208);
+    auto mask = readMaskFromFormatInformation();
+    std::string bits;
+    bits.reserve(208);
 
-        bool upward = true;
-        for (int right = size - 1; right > 0; right -= 2) {
-            if (right==6) {
-                --right;
-            }
+    bool upward = true;
+    for (int right = size - 1; right > 0; right -= 2) {
+        if (right==6) {
+            --right;
+        }
 
-            for (int step = 0; step < size; ++step) {
-                int y = upward ? size - 1 - step : step;
+        for (int step = 0; step < size; ++step) {
+            int y = upward ? size - 1 - step : step;
 
-                for(int dx = 0; dx < 2; ++dx) {
-                    int x = right - dx;
+            for(int dx = 0; dx < 2; ++dx) {
+                int x = right - dx;
 
-                    if (isFunctionModule(x, y)) {
-                        continue;
-                    }
-                    bool bit = bitmap->get(x, y);
-
-                    if (maskApplies(mask, x, y)) {
-                        bit = !bit;
-                    }
-
-                    bits.push_back(bit ? '1' : '0');
+                if (isFunctionModule(x, y)) {
+                    continue;
                 }
+                bool bit = bitmap->get(x, y);
+
+                if (maskApplies(mask, x, y)) {
+                    bit = !bit;
+                }
+
+                bits.push_back(bit ? '1' : '0');
             }
-            upward = !upward;
         }
-
-        std::print("mask {} first 16 bits: ", mask);
-        for (int i = 0; i < 16; ++i) {
-            std::print("{}", bits.at(i));
-        }
-
-        auto decoded = decodeMessage(bits);
-        if (!decoded.empty()) {
-            std::print(" -> decoded: {}", decoded);
-        }
-        std::println("");
+        upward = !upward;
     }
+
+    std::print("mask {} first 16 bits: ", mask);
+    for (int i = 0; i < 16; ++i) {
+        std::print("{}", bits.at(i));
+    }
+
+    auto decoded = decodeMessage(bits);
+    if (!decoded.empty()) {
+        std::print(" -> decoded: {}", decoded);
+    }
+    std::println("");
 
     // You can compare your results using the solution below.
     ReaderOptions options;
