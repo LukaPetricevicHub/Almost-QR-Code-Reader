@@ -99,6 +99,9 @@ qr02.png|314159
 qr03.png|Hello World
 qr04.png|Intro. to C++
 qr05.png|1 + 2 is 3
+qr-v2.png|VERSION 2 / ALIGNMENT
+qr-v3.png|Version 3 has a larger data area.
+qr-v4.png|VERSION 4 / 1234567890 / GENERALIZED DECODER
 CASES
 
 if [[ "${failures}" -eq 0 ]]; then

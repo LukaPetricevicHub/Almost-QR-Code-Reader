@@ -5,6 +5,8 @@ project(
   VERSION 0.0.0
   LANGUAGES CXX C)
 
+include(CTest)
+
 set(PROJECT_CXX_STANDARD
     23
     CACHE STRING "C++ standard, available option: 20, 23")

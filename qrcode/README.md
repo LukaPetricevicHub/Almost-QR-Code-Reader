@@ -4,12 +4,13 @@ Almost QR Code Reader is my implementation of a QR Code reader for my project in
 
 ## Scope
 
-The decoder works on Model 2 Version 1 QR samples. It loads images with `stb_image`, uses ZXing to turn the image into a black/white bitmap, then decodes the 21x21 QR bitmap directly. The ZXing decoded text is still printed at the end as a debugging comparison.
+The decoder works on Model 2 Version 1-4 QR samples. It loads images with `stb_image`, uses ZXing to turn the image into a black/white bitmap, and then decodes the QR bitmap directly. The input is still expected to use one pixel per module and a four-module quiet zone. The ZXing decoded text is printed at the end as a debugging comparison.
 
 Implemented behavior:
 
+- Infers Versions 1-4 from the input dimensions.
 - Reads QR data modules in the standard zig-zag order.
-- Skips function modules manually.
+- Skips finder, timing, format, dark, and version-specific alignment modules.
 - Reads the mask pattern from the QR format information.
 - Decodes numeric mode, alphanumeric mode, and byte mode for printable ASCII.
 
@@ -19,6 +20,7 @@ Implemented behavior:
 - `Decoder.cpp`: coordinates mask reading, data-bit reading, and segment decoding.
 - `DataReader.cpp`: walks the QR data modules in the standard zig-zag order.
 - `Masks.cpp`: implements the 8 QR mask formulas and reads the mask from format information.
+- `QrVersion.cpp`: validates Versions 1-4 and provides their sizes and alignment-pattern positions.
 - `Bitstream.cpp`: reads fixed-width integer values from the decoded bit string.
 - `Segments.cpp`: decodes numeric, alphanumeric, and printable ASCII byte segments.
 
@@ -55,13 +57,19 @@ cmake --build cmake-build-debug --target qrcode_tests
 cmake-build-debug/qrcode/qrcode_tests
 ```
 
+Run all registered tests:
+
+```bash
+ctest --test-dir cmake-build-debug --output-on-failure
+```
+
 Run the script:
 
 ```bash
 qrcode/test_qrcode.sh
 ```
 
-The expected result is:
+The expected result includes the five supplied Version 1 images and one regression image for each new version:
 
 ```text
 qr01.png -> 12345
@@ -69,4 +77,7 @@ qr02.png -> 314159
 qr03.png -> Hello World
 qr04.png -> Intro. to C++
 qr05.png -> 1 + 2 is 3
+qr-v2.png -> VERSION 2 / ALIGNMENT
+qr-v3.png -> Version 3 has a larger data area.
+qr-v4.png -> VERSION 4 / 1234567890 / GENERALIZED DECODER
 ```

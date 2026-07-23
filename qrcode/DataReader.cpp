@@ -2,10 +2,19 @@
 
 #include "Masks.hpp"
 
+#include <stdexcept>
+
 namespace qrcode {
 
-DataReader::DataReader(const ZXing::BitMatrix& bitmap, int version, int mask)
-    : bitmap_(bitmap), version_(version), mask_(mask), size_(17 + 4 * version) {}
+DataReader::DataReader(const ZXing::BitMatrix& bitmap, QrVersion version, int mask)
+    : bitmap_(bitmap), version_(version), mask_(mask), size_(version.symbolSize()) {
+    if (bitmap.width() != size_ || bitmap.height() != size_) {
+        throw std::invalid_argument("QR bitmap size does not match its version");
+    }
+    if (mask < 0 || mask > 7) {
+        throw std::invalid_argument("QR mask must be between 0 and 7");
+    }
+}
 
 std::string DataReader::readBits() const {
     std::string bits;
@@ -54,9 +63,41 @@ bool DataReader::isFunctionModule(int x, int y) const {
     if (x == 6 || y == 6) {
         return true;
     }
-    if (x == 8 && y == 4 * version_ + 9) {
+    if (isAlignmentPattern(x, y)) {
         return true;
     }
+    if (x == 8 && y == 4 * version_.number() + 9) {
+        return true;
+    }
+    return false;
+}
+
+bool DataReader::isAlignmentPattern(int x, int y) const {
+    const auto centers = version_.alignmentPatternCenters();
+    if (centers.empty()) {
+        return false;
+    }
+
+    const int firstCenter = centers.front();
+    const int lastCenter = centers.back();
+
+    for (const int centerY : centers) {
+        for (const int centerX : centers) {
+            const bool overlapsFinder =
+                (centerX == firstCenter && centerY == firstCenter) ||
+                (centerX == firstCenter && centerY == lastCenter) ||
+                (centerX == lastCenter && centerY == firstCenter);
+            if (overlapsFinder) {
+                continue;
+            }
+
+            if (x >= centerX - 2 && x <= centerX + 2 &&
+                y >= centerY - 2 && y <= centerY + 2) {
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 
