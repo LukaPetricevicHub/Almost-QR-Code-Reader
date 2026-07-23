@@ -1,5 +1,7 @@
 include(FetchContent)
 
+find_package(Iconv REQUIRED)
+
 set(ZXING_WRITERS OFF CACHE STRING "ZXing writer support" FORCE)
 set(ZXING_C_API OFF CACHE BOOL "ZXing C API" FORCE)
 set(ZXING_EXAMPLES OFF CACHE BOOL "ZXing examples" FORCE)
@@ -19,11 +21,13 @@ add_library(
   Bitstream.cpp
   DataReader.cpp
   Decoder.cpp
+  MessageFormatter.cpp
   Masks.cpp
   QrVersion.cpp
-  Segments.cpp)
+  Segments.cpp
+  TextEncoding.cpp)
 target_compile_features(qrcode_core PUBLIC "cxx_std_${PROJECT_CXX_STANDARD}")
-target_link_libraries(qrcode_core PUBLIC ZXing::ZXing)
+target_link_libraries(qrcode_core PUBLIC ZXing::ZXing Iconv::Iconv)
 
 add_executable(qrcode main.cpp)
 target_link_libraries(qrcode PRIVATE qrcode_core stb::stb)

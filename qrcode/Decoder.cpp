@@ -8,16 +8,20 @@
 
 namespace qrcode {
 
-DecodeResult Decoder::decode(const ZXing::BitMatrix& bitmap, QrVersion version) const {
+std::expected<DecodeResult, SegmentError> Decoder::decode(
+    const ZXing::BitMatrix& bitmap, QrVersion version) const {
     const auto mask = Masks::readFromFormatInformation(bitmap);
     auto bits = DataReader{bitmap, version, mask}.readBits();
-    auto message = Segments::decodeMessage(bits).value_or(std::string{});
+    auto segments = Segments::decodeMessage(bits, version);
+    if (!segments.has_value()) {
+        return std::unexpected(segments.error());
+    }
 
     return DecodeResult{
         .version = version.number(),
         .mask = mask,
         .bits = std::move(bits),
-        .message = std::move(message),
+        .segments = std::move(*segments),
     };
 }
 

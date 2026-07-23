@@ -3,7 +3,9 @@
 #include <ZXingCpp.h>
 
 #include "Decoder.hpp"
+#include "MessageFormatter.hpp"
 #include "QrVersion.hpp"
+#include "Segments.hpp"
 
 #include <array>
 #include <iostream>
@@ -72,14 +74,21 @@ int main(int argc, char** argv) {
 
     // You decoder goes here.
     const auto decoded = qrcode::Decoder{}.decode(*bitmap, *version);
-
-    std::print("version {} mask {} first 16 bits: ", decoded.version, decoded.mask);
-    for (int i = 0; i < 16; ++i) {
-        std::print("{}", decoded.bits.at(i));
+    if (!decoded.has_value()) {
+        std::cerr << "Could not decode QR segments: "
+                  << qrcode::toString(decoded.error()) << '\n';
+        return 1;
     }
 
-    if (!decoded.message.empty()) {
-        std::print(" -> decoded: {}", decoded.message);
+    std::print("version {} mask {} first 16 bits: ", decoded->version,
+               decoded->mask);
+    for (int i = 0; i < 16; ++i) {
+        std::print("{}", decoded->bits.at(i));
+    }
+
+    const auto message = qrcode::MessageFormatter::format(decoded->segments);
+    if (!message.empty()) {
+        std::print(" -> decoded: {}", message);
     }
     std::println("");
 

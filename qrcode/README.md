@@ -12,7 +12,9 @@ Implemented behavior:
 - Reads QR data modules in the standard zig-zag order.
 - Skips finder, timing, format, dark, and version-specific alignment modules.
 - Reads the mask pattern from the QR format information.
-- Decodes numeric mode, alphanumeric mode, and byte mode for printable ASCII.
+- Decodes numeric, alphanumeric, full byte, and Kanji segments.
+- Preserves arbitrary byte values and escapes non-printable bytes as `\xNN`.
+- Converts QR Kanji values from Shift-JIS to UTF-8 for terminal output.
 
 ## Code layout
 
@@ -22,7 +24,9 @@ Implemented behavior:
 - `Masks.cpp`: implements the 8 QR mask formulas and reads the mask from format information.
 - `QrVersion.cpp`: validates Versions 1-4 and provides their sizes and alignment-pattern positions.
 - `Bitstream.cpp`: reads fixed-width integer values from the decoded bit string.
-- `Segments.cpp`: decodes numeric, alphanumeric, and printable ASCII byte segments.
+- `Segments.cpp`: parses typed QR segments and reports detailed decoding errors.
+- `TextEncoding.cpp`: maps QR Kanji values to Shift-JIS and converts them to UTF-8.
+- `MessageFormatter.cpp`: renders text segments and safely escapes binary byte segments.
 
 ## Output
 
@@ -80,4 +84,5 @@ qr05.png -> 1 + 2 is 3
 qr-v2.png -> VERSION 2 / ALIGNMENT
 qr-v3.png -> Version 3 has a larger data area.
 qr-v4.png -> VERSION 4 / 1234567890 / GENERALIZED DECODER
+qr-kanji.png -> 漢漾
 ```

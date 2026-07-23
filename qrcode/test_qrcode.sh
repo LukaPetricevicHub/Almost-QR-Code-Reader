@@ -102,6 +102,7 @@ qr05.png|1 + 2 is 3
 qr-v2.png|VERSION 2 / ALIGNMENT
 qr-v3.png|Version 3 has a larger data area.
 qr-v4.png|VERSION 4 / 1234567890 / GENERALIZED DECODER
+qr-kanji.png|漢漾
 CASES
 
 if [[ "${failures}" -eq 0 ]]; then
