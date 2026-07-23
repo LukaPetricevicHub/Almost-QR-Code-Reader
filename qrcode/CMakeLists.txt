@@ -19,3 +19,7 @@ add_executable(
   Segments.cpp)
 target_compile_features(qrcode PRIVATE "cxx_std_${PROJECT_CXX_STANDARD}")
 target_link_libraries(qrcode PRIVATE ZXing::ZXing stb::stb)
+
+add_executable(qrcode_tests tests.cpp Bitstream.cpp Masks.cpp Segments.cpp)
+target_compile_features(qrcode_tests PRIVATE "cxx_std_${PROJECT_CXX_STANDARD}")
+target_link_libraries(qrcode_tests PRIVATE ZXing::ZXing)

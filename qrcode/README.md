@@ -48,6 +48,13 @@ cmake-build-debug/qrcode/qrcode qrcode/qr01.png
 
 ## Regression tests
 
+Run the C++ unit tests:
+
+```bash
+cmake --build cmake-build-debug --target qrcode_tests
+cmake-build-debug/qrcode/qrcode_tests
+```
+
 Run the script:
 
 ```bash
