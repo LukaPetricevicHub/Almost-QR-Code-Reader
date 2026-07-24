@@ -4,12 +4,12 @@ Almost QR Code Reader is my implementation of a QR Code reader for my project in
 
 ## Scope
 
-The decoder works on Model 2 Version 1-4 QR samples. It loads images with `stb_image`, uses ZXing to turn the image into a black/white bitmap, and then decodes the QR bitmap itself. The input is still expected to use one pixel per module and a four-module quiet zone.
+The decoder works on Model 2 Version 1-4 samples. It loads images with `stb_image`, uses ZXing to turn the image into a black/white bitmap, and then decodes the QR bitmap itself. The input is expected to use one pixel per module and a four block quiet zone.
 
 Implemented behavior:
 
 - Infers Versions 1-4 from the input dimensions.
-- Reads QR data modules in the standard zig-zag order.
+- Reads data modules in the standard zig-zag order.
 - Skips finder, timing, format, dark, and version specific alignment modules.
 - Reads both copies of the QR format information and corrects up to three damaged format bits.
 - Reads the error-correction level and mask pattern from the corrected format information.
@@ -33,7 +33,7 @@ Implemented behavior:
 - `Bitstream.cpp`: reads fixed-width integer values from the decoded bit string.
 - `Segments.cpp`: parses typed QR segments and reports detailed decoding errors.
 - `TextEncoding.cpp`: maps QR Kanji values to Shift-JIS and converts them to UTF-8.
-- `MessageFormatter.cpp`: renders text segments and safely escapes binary byte segments.
+- `MessageFormatter.cpp`: renders text segments and escapes binary byte segments.
 
 ## Output
 
@@ -66,7 +66,7 @@ cmake-build-debug/qrcode/qrcode qrcode/qr01.png
 
 ## Custom fixtures
 
-The Version 2-4 and Kanji PNGs are reproducible developer test fixtures generated with ZXing's independent QR encoder. Build and run the generator from the repository root:
+The Version 2-4 and Kanji PNGs are test fixtures generated with ZXing's independent QR encoder. Build and run the generator from the repository root:
 
 ```bash
 cmake -S . -B cmake-build-debug -DPROJECT_TOPIC=QRCODE -DQRCODE_BUILD_FIXTURE_GENERATOR=ON
@@ -97,7 +97,7 @@ Run the script:
 qrcode/test_qrcode.sh
 ```
 
-The expected result includes the five supplied Version 1 images and one regression image for each new version:
+The expected result includes the five already provided Version 1 images and one regression image for each new version:
 
 ```text
 qr01.png -> 12345
