@@ -36,16 +36,22 @@ namespace {
 static_assert(qrcode::qrKanjiToShiftJis(0x073F) == 0x8ABF);
 static_assert(qrcode::qrKanjiToShiftJis(0x1740) == 0xE040);
 static_assert(!qrcode::qrKanjiToShiftJis(0x003F).has_value());
-static_assert(qrcode::versionOneBlockLayout(
+constexpr auto versionOneForStaticChecks =
+    *qrcode::QrVersion::fromNumber(1);
+static_assert(qrcode::qrBlockLayout(
+                  versionOneForStaticChecks,
                   qrcode::ErrorCorrectionLevel::low)
                   .totalCodewords() == 26);
-static_assert(qrcode::versionOneBlockLayout(
+static_assert(qrcode::qrBlockLayout(
+                  versionOneForStaticChecks,
                   qrcode::ErrorCorrectionLevel::medium)
                   .totalCodewords() == 26);
-static_assert(qrcode::versionOneBlockLayout(
+static_assert(qrcode::qrBlockLayout(
+                  versionOneForStaticChecks,
                   qrcode::ErrorCorrectionLevel::quartile)
                   .totalCodewords() == 26);
-static_assert(qrcode::versionOneBlockLayout(
+static_assert(qrcode::qrBlockLayout(
+                  versionOneForStaticChecks,
                   qrcode::ErrorCorrectionLevel::high)
                   .totalCodewords() == 26);
 
@@ -303,6 +309,63 @@ void testCodewordPacking() {
            "Wrong invalid-bit error");
 }
 
+void testCodewordBlockLayouts() {
+    constexpr std::array levels{
+        qrcode::ErrorCorrectionLevel::low,
+        qrcode::ErrorCorrectionLevel::medium,
+        qrcode::ErrorCorrectionLevel::quartile,
+        qrcode::ErrorCorrectionLevel::high,
+    };
+    constexpr std::array<std::array<int, 4>, 4> expectedBlockCounts{{
+        {1, 1, 1, 1},
+        {1, 1, 1, 1},
+        {1, 1, 2, 2},
+        {1, 2, 2, 4},
+    }};
+    constexpr std::array<int, 4> expectedTotalCodewords{26, 44, 70, 100};
+
+    for (int versionNumber = 1; versionNumber <= 4; ++versionNumber) {
+        const auto version = qrcode::QrVersion::fromNumber(versionNumber);
+        for (std::size_t levelIndex = 0; levelIndex < levels.size();
+             ++levelIndex) {
+            const auto layout =
+                qrcode::qrBlockLayout(*version, levels.at(levelIndex));
+            expect(layout.blockCount ==
+                       expectedBlockCounts.at(versionNumber - 1)
+                           .at(levelIndex),
+                   "QR block count mismatch");
+            expect(layout.totalCodewords() ==
+                       expectedTotalCodewords.at(versionNumber - 1),
+                   "QR total codeword count mismatch");
+        }
+    }
+}
+
+void testDataCodewordDeinterleaving() {
+    constexpr qrcode::QrBlockLayout layout{
+        .blockCount = 2,
+        .dataCodewordsPerBlock = 3,
+        .errorCorrectionCodewordsPerBlock = 2,
+    };
+    const std::vector<std::uint8_t> interleaved{
+        0xA1, 0xB1, 0xA2, 0xB2, 0xA3,
+        0xB3, 0xE1, 0xF1, 0xE2, 0xF2,
+    };
+    const auto data =
+        qrcode::deinterleaveDataCodewords(interleaved, layout);
+    expect(data.has_value(), "Valid interleaved codewords should decode");
+    expect(*data == std::vector<std::uint8_t>{
+                        0xA1, 0xA2, 0xA3, 0xB1, 0xB2, 0xB3},
+           "Deinterleaved data codeword order mismatch");
+
+    const auto truncated = qrcode::deinterleaveDataCodewords(
+        std::span{interleaved}.first(interleaved.size() - 1), layout);
+    expect(!truncated.has_value(),
+           "Truncated interleaved codewords should fail");
+    expect(truncated.error() == qrcode::CodewordError::invalidCodewordCount,
+           "Wrong interleaved codeword-count error");
+}
+
 void testGaloisFieldArithmetic() {
     expect(qrcode::GaloisField256::exponent(0) == 1,
            "GF exponent zero mismatch");
@@ -375,17 +438,18 @@ void testAllVersionOneCorrectionLevels() {
     for (std::size_t levelIndex = 0; levelIndex < levels.size();
          ++levelIndex) {
         const auto layout =
-            qrcode::versionOneBlockLayout(levels.at(levelIndex));
-        std::vector<std::uint8_t> data(layout.dataCodewords);
+            qrcode::qrBlockLayout(versionOne(), levels.at(levelIndex));
+        std::vector<std::uint8_t> data(layout.totalDataCodewords());
         for (std::size_t index = 0; index < data.size(); ++index) {
             data.at(index) = static_cast<std::uint8_t>(
                 index * 29 + levelIndex * 47 + 3);
         }
 
         const auto expected =
-            encodeTestBlock(data, layout.errorCorrectionCodewords);
+            encodeTestBlock(data, layout.errorCorrectionCodewordsPerBlock);
         auto damaged = expected;
-        const int correctable = layout.errorCorrectionCodewords / 2;
+        const int correctable =
+            layout.errorCorrectionCodewordsPerBlock / 2;
         for (int error = 0; error < correctable; ++error) {
             const auto position =
                 static_cast<std::size_t>((error * 5) % expected.size());
@@ -393,7 +457,7 @@ void testAllVersionOneCorrectionLevels() {
         }
 
         const auto corrected = qrcode::ReedSolomon::correct(
-            damaged, layout.errorCorrectionCodewords);
+            damaged, layout.errorCorrectionCodewordsPerBlock);
         expect(corrected.has_value(),
                "Version 1 correction level failed within its capacity");
         expect(corrected->codewords == expected,
@@ -629,8 +693,9 @@ void testVersionOneModuleErrorCorrection() {
            "Clean Version 1 image should need no correction");
 
     const auto layout =
-        qrcode::versionOneBlockLayout(clean->errorCorrectionLevel);
-    const int correctable = layout.errorCorrectionCodewords / 2;
+        qrcode::qrBlockLayout(version, clean->errorCorrectionLevel);
+    const int correctable =
+        layout.errorCorrectionCodewordsPerBlock / 2;
     const auto coordinates =
         findDataCoordinates(pristine, version, clean->mask);
 
@@ -689,6 +754,8 @@ int main() {
         testMaskPatterns();
         testFormatInformation();
         testCodewordPacking();
+        testCodewordBlockLayouts();
+        testDataCodewordDeinterleaving();
         testGaloisFieldArithmetic();
         testReedSolomonIsoVector();
         testAllVersionOneCorrectionLevels();

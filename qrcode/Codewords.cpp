@@ -30,6 +30,27 @@ std::expected<std::vector<std::uint8_t>, CodewordError> packCodewords(
     return codewords;
 }
 
+std::expected<std::vector<std::uint8_t>, CodewordError>
+deinterleaveDataCodewords(std::span<const std::uint8_t> codewords,
+                          QrBlockLayout layout) {
+    if (static_cast<int>(codewords.size()) != layout.totalCodewords()) {
+        return std::unexpected(CodewordError::invalidCodewordCount);
+    }
+
+    std::vector<std::uint8_t> data;
+    data.reserve(layout.totalDataCodewords());
+
+    for (int block = 0; block < layout.blockCount; ++block) {
+        for (int position = 0; position < layout.dataCodewordsPerBlock;
+             ++position) {
+            const auto interleavedIndex = static_cast<std::size_t>(
+                position * layout.blockCount + block);
+            data.push_back(codewords[interleavedIndex]);
+        }
+    }
+    return data;
+}
+
 std::string unpackCodewords(std::span<const std::uint8_t> codewords) {
     constexpr int bitsPerCodeword = 8;
     std::string bits;

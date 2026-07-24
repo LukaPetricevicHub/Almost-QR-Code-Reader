@@ -22,6 +22,7 @@ struct Fixture {
     std::string_view message;
     int version;
     ZXing::CharacterSet encoding;
+    ZXing::QRCode::ErrorCorrectionLevel errorCorrectionLevel;
 };
 
 void writePng(const ZXing::BitMatrix& bitmap,
@@ -54,8 +55,7 @@ void generateFixture(const Fixture& fixture,
     ZXing::QRCode::Writer writer;
     writer.setVersion(fixture.version)
         .setMargin(quietZone)
-        .setErrorCorrectionLevel(
-            ZXing::QRCode::ErrorCorrectionLevel::Low)
+        .setErrorCorrectionLevel(fixture.errorCorrectionLevel)
         .setEncoding(fixture.encoding);
 
     const auto bitmap =
@@ -86,24 +86,32 @@ int main(int argc, char** argv) {
             .message = "Hello from Luka",
             .version = 2,
             .encoding = ZXing::CharacterSet::ISO8859_1,
+            .errorCorrectionLevel =
+                ZXing::QRCode::ErrorCorrectionLevel::Quality,
         },
         Fixture{
             .filename = "qr-v3.png",
             .message = "Almost QR Code Reader",
             .version = 3,
             .encoding = ZXing::CharacterSet::ISO8859_1,
+            .errorCorrectionLevel =
+                ZXing::QRCode::ErrorCorrectionLevel::Quality,
         },
         Fixture{
             .filename = "qr-v4.png",
             .message = "I like Introduction to C++",
             .version = 4,
             .encoding = ZXing::CharacterSet::ISO8859_1,
+            .errorCorrectionLevel =
+                ZXing::QRCode::ErrorCorrectionLevel::High,
         },
         Fixture{
             .filename = "qr-kanji.png",
             .message = "漢字は格好いい",
             .version = 1,
             .encoding = ZXing::CharacterSet::Shift_JIS,
+            .errorCorrectionLevel =
+                ZXing::QRCode::ErrorCorrectionLevel::Low,
         },
     };
 

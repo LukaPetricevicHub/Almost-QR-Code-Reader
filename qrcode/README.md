@@ -13,6 +13,7 @@ Implemented behavior:
 - Skips finder, timing, format, dark, and version specific alignment modules.
 - Reads both copies of the QR format information and corrects up to three damaged format bits.
 - Reads the error-correction level and mask pattern from the corrected format information.
+- Separates data from parity codewords and deinterleaves multi-block Version 3-4 symbols.
 - Corrects damaged Version 1 codewords with QR Reed-Solomon error correction at levels L, M, Q, and H.
 - Decodes numeric, alphanumeric, full byte, and Kanji segments.
 - Preserves arbitrary byte values and escapes non-printable bytes as `\xNN`.
@@ -73,7 +74,7 @@ cmake --build cmake-build-debug --target qrcode_generate_fixtures
 cmake-build-debug/qrcode/qrcode_generate_fixtures qrcode
 ```
 
-The generator forces each requested QR version, uses error-correction level L, writes one pixel per module with a four-module quiet zone, and selects Shift-JIS so that the Japanese fixture uses QR Kanji mode.
+The generator forces each requested QR version, writes one pixel per module with a four-module quiet zone, and selects Shift-JIS so that the Japanese fixture uses QR Kanji mode. The Version 2 and 3 fixtures use error-correction level Q, Version 4 uses H, and the Kanji fixture uses L. This exercises one-, two-, and four-block codeword layouts.
 
 ## Regression tests
 
@@ -110,4 +111,4 @@ qr-v4.png -> I like Introduction to C++
 qr-kanji.png -> 漢字は格好いい
 ```
 
-The C++ tests also cover both format-information copies, BCH format recovery, GF(256) arithmetic, the ISO/IEC QR Reed-Solomon example, all four Version 1 error-correction levels at their guaranteed correction limits, and real data-module corruption in `qr01.png`.
+The C++ tests also cover both format-information copies, BCH format recovery, all Version 1-4 block layouts, codeword deinterleaving, GF(256) arithmetic, the ISO/IEC QR Reed-Solomon example, all four Version 1 error-correction levels at their guaranteed correction limits, and real data-module corruption in `qr01.png`.

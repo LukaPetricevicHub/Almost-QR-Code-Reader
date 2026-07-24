@@ -6,7 +6,7 @@
 #include "ReedSolomon.hpp"
 #include "Segments.hpp"
 
-#include <span>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -28,32 +28,43 @@ std::expected<DecodeResult, DecodeError> Decoder::decode(
     }
 
     auto rawBits = DataReader{bitmap, version, format->mask}.readBits();
-    auto dataBits = rawBits;
+    const auto layout =
+        qrBlockLayout(version, format->errorCorrectionLevel);
+    constexpr int bitsPerCodeword = 8;
+    const auto codewordBitCount = static_cast<std::size_t>(
+        layout.totalCodewords() * bitsPerCodeword);
+    const auto expectedRemainderBits =
+        static_cast<std::size_t>(version.number() == 1 ? 0 : 7);
+    if (rawBits.size() != codewordBitCount + expectedRemainderBits) {
+        return std::unexpected(
+            DecodeError{CodewordError::invalidBitCount});
+    }
+
+    const auto packed =
+        packCodewords(std::string_view{rawBits}.substr(0, codewordBitCount));
+    if (!packed.has_value()) {
+        return std::unexpected(DecodeError{packed.error()});
+    }
+
+    auto correctedCodewords = std::move(*packed);
     auto correctedErrors = 0;
 
     if (version.number() == 1) {
-        const auto layout =
-            versionOneBlockLayout(format->errorCorrectionLevel);
-        const auto codewords = packCodewords(rawBits);
-        if (!codewords.has_value()) {
-            return std::unexpected(DecodeError{codewords.error()});
-        }
-        if (static_cast<int>(codewords->size()) != layout.totalCodewords()) {
-            return std::unexpected(
-                DecodeError{ReedSolomonError::invalidCodewordCount});
-        }
-
         auto corrected = ReedSolomon::correct(
-            *codewords, layout.errorCorrectionCodewords);
+            correctedCodewords, layout.errorCorrectionCodewordsPerBlock);
         if (!corrected.has_value()) {
             return std::unexpected(DecodeError{corrected.error()});
         }
-
-        const auto dataCodewords = std::span{corrected->codewords}.first(
-            static_cast<std::size_t>(layout.dataCodewords));
-        dataBits = unpackCodewords(dataCodewords);
+        correctedCodewords = std::move(corrected->codewords);
         correctedErrors = corrected->correctedErrors;
     }
+
+    const auto dataCodewords =
+        deinterleaveDataCodewords(correctedCodewords, layout);
+    if (!dataCodewords.has_value()) {
+        return std::unexpected(DecodeError{dataCodewords.error()});
+    }
+    auto dataBits = unpackCodewords(*dataCodewords);
 
     auto segments = Segments::decodeMessage(dataBits, version);
     if (!segments.has_value()) {
