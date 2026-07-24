@@ -6,6 +6,9 @@ Almost QR Code Reader is my implementation of a QR Code reader for my project in
 
 The decoder works on Model 2 Version 1-4 samples. It loads images with `stb_image`, uses ZXing to turn the image into a black/white bitmap, and then decodes the QR bitmap itself. The input is expected to use one pixel per module and a four block quiet zone.
 
+General QR image detection and perspective correction are outside the project
+scope; this is the one advanced assignment task that is not implemented.
+
 Implemented behavior:
 
 - Infers Versions 1-4 from the input dimensions.
@@ -111,4 +114,8 @@ qr-v4.png -> I like Introduction to C++
 qr-kanji.png -> 漢字は格好いい
 ```
 
-The C++ tests also cover both format-information copies, BCH format recovery, all Version 1-4 block layouts, codeword deinterleaving, GF(256) arithmetic, the ISO/IEC QR Reed-Solomon example, all four Version 1 error-correction levels at their guaranteed correction limits, and real data-module corruption in `qr01.png`.
+The compact C++ suite covers all eight masks, numeric, alphanumeric, byte,
+and Kanji segments, format-information recovery, supported QR versions,
+malformed input, and a known Version 1 Reed-Solomon correction case. The
+shell regression suite checks all nine sample images through the command-line
+program.
