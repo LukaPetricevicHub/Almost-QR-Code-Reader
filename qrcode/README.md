@@ -1,28 +1,34 @@
 # Almost QR Code Reader
 
-Almost QR Code Reader is my implementation of a QR Code reader for my project in C++. The regression tests run the compiled program as a black-box executable.
+Almost QR Code Reader is my implementation of a QR Code reader for my project in Introduction to C++. The regression tests run the compiled program as a black-box executable.
 
 ## Scope
 
-The decoder works on Model 2 Version 1-4 QR samples. It loads images with `stb_image`, uses ZXing to turn the image into a black/white bitmap, and then decodes the QR bitmap directly. The input is still expected to use one pixel per module and a four-module quiet zone. The ZXing decoded text is printed at the end as a debugging comparison.
+The decoder works on Model 2 Version 1-4 QR samples. It loads images with `stb_image`, uses ZXing to turn the image into a black/white bitmap, and then decodes the QR bitmap itself. The input is still expected to use one pixel per module and a four-module quiet zone.
 
 Implemented behavior:
 
 - Infers Versions 1-4 from the input dimensions.
 - Reads QR data modules in the standard zig-zag order.
-- Skips finder, timing, format, dark, and version-specific alignment modules.
-- Reads the mask pattern from the QR format information.
+- Skips finder, timing, format, dark, and version specific alignment modules.
+- Reads both copies of the QR format information and corrects up to three damaged format bits.
+- Reads the error-correction level and mask pattern from the corrected format information.
+- Corrects damaged Version 1 codewords with QR Reed-Solomon error correction at levels L, M, Q, and H.
 - Decodes numeric, alphanumeric, full byte, and Kanji segments.
 - Preserves arbitrary byte values and escapes non-printable bytes as `\xNN`.
 - Converts QR Kanji values from Shift-JIS to UTF-8 for terminal output.
 
 ## Code layout
 
-- `main.cpp`: command-line entry point, image loading, bitmap debug printing, and ZXing comparison output.
-- `Decoder.cpp`: coordinates mask reading, data-bit reading, and segment decoding.
+- `main.cpp`: command-line entry point, image loading, normal output, and optional debug output.
+- `Decoder.cpp`: coordinates format reading, data-bit reading, error correction, and segment decoding.
+- `FormatInformation.cpp`: reads both format copies and performs BCH nearest-pattern recovery.
 - `DataReader.cpp`: walks the QR data modules in the standard zig-zag order.
-- `Masks.cpp`: implements the 8 QR mask formulas and reads the mask from format information.
+- `Masks.cpp`: implements the 8 QR mask formulas.
 - `QrVersion.cpp`: validates Versions 1-4 and provides their sizes and alignment-pattern positions.
+- `Codewords.cpp`: converts between the module bit stream and eight-bit QR codewords.
+- `GaloisField256.cpp`: implements finite-field arithmetic for the QR primitive polynomial `0x11D`.
+- `ReedSolomon.cpp`: detects and corrects damaged Version 1 codewords.
 - `Bitstream.cpp`: reads fixed-width integer values from the decoded bit string.
 - `Segments.cpp`: parses typed QR segments and reports detailed decoding errors.
 - `TextEncoding.cpp`: maps QR Kanji values to Shift-JIS and converts them to UTF-8.
@@ -30,12 +36,17 @@ Implemented behavior:
 
 ## Output
 
-The program intentionally prints development output while the decoder is being built. Current output includes:
+Normal mode writes only the decoded human-readable message to standard output:
 
-- the converted QR code 
-- the first 16 data bits for the mask stored in the format information,
-- the decoded message on the mask line,
-- the ZXing decoded text as a final comparison line.
+```text
+12345
+```
+
+Pass `--debug` to additionally print the sampled bitmap, version, error-correction level, mask, correction counts, and first 16 corrected data bits:
+
+```bash
+cmake-build-debug/qrcode/qrcode qrcode/qr01.png --debug
+```
 
 ## Usage
 
@@ -51,6 +62,18 @@ Run one example:
 ```bash
 cmake-build-debug/qrcode/qrcode qrcode/qr01.png
 ```
+
+## Custom fixtures
+
+The Version 2-4 and Kanji PNGs are reproducible developer test fixtures generated with ZXing's independent QR encoder. Build and run the generator from the repository root:
+
+```bash
+cmake -S . -B cmake-build-debug -DPROJECT_TOPIC=QRCODE -DQRCODE_BUILD_FIXTURE_GENERATOR=ON
+cmake --build cmake-build-debug --target qrcode_generate_fixtures
+cmake-build-debug/qrcode/qrcode_generate_fixtures qrcode
+```
+
+The generator forces each requested QR version, uses error-correction level L, writes one pixel per module with a four-module quiet zone, and selects Shift-JIS so that the Japanese fixture uses QR Kanji mode.
 
 ## Regression tests
 
@@ -81,8 +104,10 @@ qr02.png -> 314159
 qr03.png -> Hello World
 qr04.png -> Intro. to C++
 qr05.png -> 1 + 2 is 3
-qr-v2.png -> VERSION 2 / ALIGNMENT
-qr-v3.png -> Version 3 has a larger data area.
-qr-v4.png -> VERSION 4 / 1234567890 / GENERALIZED DECODER
-qr-kanji.png -> 漢漾
+qr-v2.png -> Hello from Luka
+qr-v3.png -> Almost QR Code Reader
+qr-v4.png -> I like Introduction to C++
+qr-kanji.png -> 漢字は格好いい
 ```
+
+The C++ tests also cover both format-information copies, BCH format recovery, GF(256) arithmetic, the ISO/IEC QR Reed-Solomon example, all four Version 1 error-correction levels at their guaranteed correction limits, and real data-module corruption in `qr01.png`.

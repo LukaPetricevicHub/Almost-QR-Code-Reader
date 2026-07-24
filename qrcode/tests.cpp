@@ -1,28 +1,53 @@
 #include "Bitstream.hpp"
+#include "Codewords.hpp"
 #include "DataReader.hpp"
+#include "Decoder.hpp"
+#include "FormatInformation.hpp"
+#include "GaloisField256.hpp"
 #include "Masks.hpp"
 #include "MessageFormatter.hpp"
 #include "QrVersion.hpp"
+#include "ReedSolomon.hpp"
 #include "Segments.hpp"
 #include "TextEncoding.hpp"
 
 #include <BitMatrix.h>
+#include <HybridBinarizer.h>
+#include <ImageView.h>
 
 #include <array>
 #include <cstdint>
 #include <iostream>
+#include <memory>
+#include <optional>
 #include <print>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 namespace {
 
 static_assert(qrcode::qrKanjiToShiftJis(0x073F) == 0x8ABF);
 static_assert(qrcode::qrKanjiToShiftJis(0x1740) == 0xE040);
 static_assert(!qrcode::qrKanjiToShiftJis(0x003F).has_value());
+static_assert(qrcode::versionOneBlockLayout(
+                  qrcode::ErrorCorrectionLevel::low)
+                  .totalCodewords() == 26);
+static_assert(qrcode::versionOneBlockLayout(
+                  qrcode::ErrorCorrectionLevel::medium)
+                  .totalCodewords() == 26);
+static_assert(qrcode::versionOneBlockLayout(
+                  qrcode::ErrorCorrectionLevel::quartile)
+                  .totalCodewords() == 26);
+static_assert(qrcode::versionOneBlockLayout(
+                  qrcode::ErrorCorrectionLevel::high)
+                  .totalCodewords() == 26);
 
 void expect(bool condition, std::string_view message) {
     if (!condition) {
@@ -36,6 +61,123 @@ qrcode::QrVersion versionOne() {
         throw std::runtime_error("Version 1 must be supported");
     }
     return *version;
+}
+
+ZXing::BitMatrix loadQrBitmap(std::string_view filename) {
+    const std::string path =
+        std::string{QRCODE_SOURCE_DIR} + "/" + std::string{filename};
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    std::unique_ptr<stbi_uc, void (*)(void*)> buffer(
+        stbi_load(path.c_str(), &width, &height, &channels, 0),
+        stbi_image_free);
+    if (!buffer) {
+        throw std::runtime_error("Could not load QR test image");
+    }
+
+    constexpr auto formats =
+        std::array{ZXing::ImageFormat::None, ZXing::ImageFormat::Lum,
+                   ZXing::ImageFormat::LumA, ZXing::ImageFormat::RGB,
+                   ZXing::ImageFormat::RGBA};
+    if (channels < 1 || channels >= static_cast<int>(formats.size())) {
+        throw std::runtime_error("Unsupported test image channel count");
+    }
+
+    const auto version = qrcode::QrVersion::fromImageSize(width, height);
+    if (!version.has_value()) {
+        throw std::runtime_error("Invalid QR test image dimensions");
+    }
+
+    const ZXing::ImageView image{buffer.get(), width, height,
+                                 formats.at(channels)};
+    const int size = version->symbolSize();
+    const auto cropped = image.cropped(
+        qrcode::QrVersion::quietZoneWidth,
+        qrcode::QrVersion::quietZoneWidth, size, size);
+    auto bitmap =
+        std::make_unique<ZXing::HybridBinarizer>(cropped)->getBlackMatrix();
+    return bitmap->copy();
+}
+
+struct Coordinate {
+    int x = -1;
+    int y = -1;
+};
+
+std::vector<Coordinate> findDataCoordinates(
+    const ZXing::BitMatrix& bitmap, qrcode::QrVersion version, int mask) {
+    const auto originalBits =
+        qrcode::DataReader{bitmap, version, mask}.readBits();
+    std::vector<Coordinate> coordinates(originalBits.size());
+
+    for (int y = 0; y < bitmap.height(); ++y) {
+        for (int x = 0; x < bitmap.width(); ++x) {
+            auto changed = bitmap.copy();
+            changed.flip(x, y);
+            const auto changedBits =
+                qrcode::DataReader{changed, version, mask}.readBits();
+
+            auto differingIndex = -1;
+            auto differenceCount = 0;
+            for (std::size_t index = 0; index < originalBits.size(); ++index) {
+                if (originalBits.at(index) != changedBits.at(index)) {
+                    differingIndex = static_cast<int>(index);
+                    ++differenceCount;
+                }
+            }
+            if (differenceCount == 1) {
+                coordinates.at(differingIndex) = {.x = x, .y = y};
+            }
+        }
+    }
+
+    for (const auto coordinate : coordinates) {
+        expect(coordinate.x >= 0 && coordinate.y >= 0,
+               "Every QR data bit should map to one module");
+    }
+    return coordinates;
+}
+
+std::vector<std::uint8_t> makeGeneratorPolynomial(
+    int errorCorrectionCodewords) {
+    std::vector<std::uint8_t> generator{1};
+
+    for (int degree = 0; degree < errorCorrectionCodewords; ++degree) {
+        std::vector<std::uint8_t> next(generator.size() + 1, 0);
+        const auto root = qrcode::GaloisField256::exponent(degree);
+        for (std::size_t index = 0; index < generator.size(); ++index) {
+            next.at(index) ^= generator.at(index);
+            next.at(index + 1) ^= qrcode::GaloisField256::multiply(
+                generator.at(index), root);
+        }
+        generator = std::move(next);
+    }
+    return generator;
+}
+
+std::vector<std::uint8_t> encodeTestBlock(
+    std::span<const std::uint8_t> data, int errorCorrectionCodewords) {
+    const auto generator =
+        makeGeneratorPolynomial(errorCorrectionCodewords);
+    std::vector<std::uint8_t> remainder(data.begin(), data.end());
+    remainder.resize(data.size() + errorCorrectionCodewords, 0);
+
+    for (std::size_t offset = 0; offset < data.size(); ++offset) {
+        const auto factor = remainder.at(offset);
+        if (factor == 0) {
+            continue;
+        }
+        for (std::size_t index = 0; index < generator.size(); ++index) {
+            remainder.at(offset + index) ^=
+                qrcode::GaloisField256::multiply(generator.at(index), factor);
+        }
+    }
+
+    std::vector<std::uint8_t> codewords(data.begin(), data.end());
+    codewords.insert(codewords.end(), remainder.end() - errorCorrectionCodewords,
+                     remainder.end());
+    return codewords;
 }
 
 void appendBits(std::string& bits, int value, int width) {
@@ -83,6 +225,198 @@ void testMaskPatterns() {
     expect(qrcode::Masks::applies(1, 4, 6), "Second mask 1 mismatch");
     expect(!qrcode::Masks::applies(2, 4, 6), "Second mask 2 mismatch");
     expect(!qrcode::Masks::applies(3, 4, 6), "Second mask 3 mismatch");
+}
+
+void testFormatInformation() {
+    const auto mediumMaskSix =
+        qrcode::FormatInformationReader::decode(0x4F97, 0x4F97);
+    expect(mediumMaskSix.has_value(),
+           "Valid format information should decode");
+    expect(mediumMaskSix->errorCorrectionLevel ==
+               qrcode::ErrorCorrectionLevel::medium,
+           "Format error-correction level mismatch");
+    expect(mediumMaskSix->mask == 6, "Format mask mismatch");
+    expect(mediumMaskSix->correctedBits == 0,
+           "Clean format information should need no correction");
+
+    constexpr std::uint16_t lowMaskSix = 0x6C41;
+    constexpr std::uint16_t threeFlips =
+        (1U << 0U) | (1U << 7U) | (1U << 14U);
+    const auto corrected = qrcode::FormatInformationReader::decode(
+        lowMaskSix ^ threeFlips, lowMaskSix ^ threeFlips);
+    expect(corrected.has_value(),
+           "Three damaged format bits should be corrected");
+    expect(corrected->errorCorrectionLevel ==
+               qrcode::ErrorCorrectionLevel::low,
+           "Corrected format level mismatch");
+    expect(corrected->mask == 6, "Corrected format mask mismatch");
+    expect(corrected->correctedBits == 3,
+           "Format correction count mismatch");
+
+    const auto secondCopy = qrcode::FormatInformationReader::decode(
+        0, lowMaskSix);
+    expect(secondCopy.has_value(),
+           "An intact second format copy should be sufficient");
+    expect(secondCopy->mask == 6, "Second format copy mask mismatch");
+
+    const auto highMaskZero =
+        qrcode::FormatInformationReader::decode(0x1689, 0x1689);
+    expect(highMaskZero.has_value() &&
+               highMaskZero->errorCorrectionLevel ==
+                   qrcode::ErrorCorrectionLevel::high &&
+               highMaskZero->mask == 0,
+           "High-level format mapping mismatch");
+
+    const auto quartileMaskZero =
+        qrcode::FormatInformationReader::decode(0x355F, 0x355F);
+    expect(quartileMaskZero.has_value() &&
+               quartileMaskZero->errorCorrectionLevel ==
+                   qrcode::ErrorCorrectionLevel::quartile &&
+               quartileMaskZero->mask == 0,
+           "Quartile-level format mapping mismatch");
+
+    const auto invalid = qrcode::FormatInformationReader::decode(0, 0);
+    expect(!invalid.has_value(),
+           "Uncorrectable format information should fail");
+    expect(invalid.error() == qrcode::FormatError::uncorrectable,
+           "Wrong uncorrectable-format error");
+}
+
+void testCodewordPacking() {
+    const auto packed =
+        qrcode::packCodewords("010000011111111100000000");
+    expect(packed.has_value(), "Valid bits should pack into codewords");
+    expect(*packed == std::vector<std::uint8_t>{0x41, 0xFF, 0x00},
+           "Packed codewords mismatch");
+    expect(qrcode::unpackCodewords(*packed) ==
+               "010000011111111100000000",
+           "Unpacked codewords mismatch");
+
+    const auto partial = qrcode::packCodewords("101");
+    expect(!partial.has_value(), "Partial codeword should fail");
+    expect(partial.error() == qrcode::CodewordError::invalidBitCount,
+           "Wrong partial-codeword error");
+
+    const auto invalid = qrcode::packCodewords("0000000x");
+    expect(!invalid.has_value(), "Invalid bit should fail");
+    expect(invalid.error() == qrcode::CodewordError::invalidBit,
+           "Wrong invalid-bit error");
+}
+
+void testGaloisFieldArithmetic() {
+    expect(qrcode::GaloisField256::exponent(0) == 1,
+           "GF exponent zero mismatch");
+    expect(qrcode::GaloisField256::exponent(8) == 0x1D,
+           "GF primitive polynomial reduction mismatch");
+    expect(qrcode::GaloisField256::add(0x53, 0xCA) == (0x53 ^ 0xCA),
+           "GF addition must be XOR");
+    expect(qrcode::GaloisField256::multiply(0, 0xA5) == 0,
+           "GF zero multiplication mismatch");
+    expect(!qrcode::GaloisField256::inverse(0).has_value(),
+           "GF zero must not have an inverse");
+    expect(!qrcode::GaloisField256::divide(1, 0).has_value(),
+           "GF division by zero should fail");
+
+    for (int value = 1; value < 256; ++value) {
+        const auto byte = static_cast<std::uint8_t>(value);
+        const auto inverse = qrcode::GaloisField256::inverse(byte);
+        expect(inverse.has_value(), "Every nonzero GF value needs an inverse");
+        expect(qrcode::GaloisField256::multiply(byte, *inverse) == 1,
+               "GF multiplicative inverse mismatch");
+    }
+}
+
+void testReedSolomonIsoVector() {
+    const std::vector<std::uint8_t> expected{
+        0x10, 0x20, 0x0C, 0x56, 0x61, 0x80, 0xEC, 0x11, 0xEC,
+        0x11, 0xEC, 0x11, 0xEC, 0x11, 0xEC, 0x11, 0xA5, 0x24,
+        0xD4, 0xC1, 0xED, 0x36, 0xC7, 0x87, 0x2C, 0x55,
+    };
+
+    const auto clean = qrcode::ReedSolomon::correct(expected, 10);
+    expect(clean.has_value(), "Clean ISO Reed-Solomon vector should pass");
+    expect(clean->codewords == expected,
+           "Clean Reed-Solomon vector should remain unchanged");
+    expect(clean->correctedErrors == 0,
+           "Clean Reed-Solomon vector correction count mismatch");
+
+    auto damaged = expected;
+    constexpr std::array positions{0, 4, 9, 17, 25};
+    for (std::size_t index = 0; index < positions.size(); ++index) {
+        damaged.at(positions.at(index)) ^=
+            static_cast<std::uint8_t>(0x31 + index);
+    }
+
+    const auto corrected = qrcode::ReedSolomon::correct(damaged, 10);
+    expect(corrected.has_value(),
+           "Five damaged Version 1-M codewords should be corrected");
+    expect(corrected->codewords == expected,
+           "Corrected ISO Reed-Solomon vector mismatch");
+    expect(corrected->correctedErrors == 5,
+           "Reed-Solomon correction count mismatch");
+
+    damaged.at(12) ^= 0xA7;
+    const auto beyondCapacity =
+        qrcode::ReedSolomon::correct(damaged, 10);
+    expect(!beyondCapacity.has_value(),
+           "Selected damage beyond the correction capacity should fail");
+    expect(beyondCapacity.error() == qrcode::ReedSolomonError::uncorrectable,
+           "Wrong uncorrectable Reed-Solomon error");
+}
+
+void testAllVersionOneCorrectionLevels() {
+    constexpr std::array levels{
+        qrcode::ErrorCorrectionLevel::low,
+        qrcode::ErrorCorrectionLevel::medium,
+        qrcode::ErrorCorrectionLevel::quartile,
+        qrcode::ErrorCorrectionLevel::high,
+    };
+
+    for (std::size_t levelIndex = 0; levelIndex < levels.size();
+         ++levelIndex) {
+        const auto layout =
+            qrcode::versionOneBlockLayout(levels.at(levelIndex));
+        std::vector<std::uint8_t> data(layout.dataCodewords);
+        for (std::size_t index = 0; index < data.size(); ++index) {
+            data.at(index) = static_cast<std::uint8_t>(
+                index * 29 + levelIndex * 47 + 3);
+        }
+
+        const auto expected =
+            encodeTestBlock(data, layout.errorCorrectionCodewords);
+        auto damaged = expected;
+        const int correctable = layout.errorCorrectionCodewords / 2;
+        for (int error = 0; error < correctable; ++error) {
+            const auto position =
+                static_cast<std::size_t>((error * 5) % expected.size());
+            damaged.at(position) ^= static_cast<std::uint8_t>(0x81 + error);
+        }
+
+        const auto corrected = qrcode::ReedSolomon::correct(
+            damaged, layout.errorCorrectionCodewords);
+        expect(corrected.has_value(),
+               "Version 1 correction level failed within its capacity");
+        expect(corrected->codewords == expected,
+               "Version 1 corrected block mismatch");
+        expect(corrected->correctedErrors == correctable,
+               "Version 1 correction-level count mismatch");
+    }
+}
+
+void testReedSolomonInputErrors() {
+    const std::vector<std::uint8_t> empty;
+    const auto noCodewords = qrcode::ReedSolomon::correct(empty, 7);
+    expect(!noCodewords.has_value(), "Empty Reed-Solomon block should fail");
+    expect(noCodewords.error() ==
+               qrcode::ReedSolomonError::invalidCodewordCount,
+           "Wrong empty Reed-Solomon block error");
+
+    const std::vector<std::uint8_t> block(26, 0);
+    const auto noParity = qrcode::ReedSolomon::correct(block, 0);
+    expect(!noParity.has_value(), "Zero parity codewords should fail");
+    expect(noParity.error() ==
+               qrcode::ReedSolomonError::invalidErrorCorrectionCount,
+           "Wrong invalid parity count error");
 }
 
 void testNumericSegment() {
@@ -284,12 +618,81 @@ void testDataModuleCountsForVersionsOneToFour() {
     }
 }
 
+void testVersionOneModuleErrorCorrection() {
+    const auto version = versionOne();
+    const auto pristine = loadQrBitmap("qr01.png");
+    const auto clean = qrcode::Decoder{}.decode(pristine, version);
+    expect(clean.has_value(), "Clean Version 1 image should decode");
+    expect(qrcode::MessageFormatter::format(clean->segments) == "12345",
+           "Clean Version 1 image message mismatch");
+    expect(clean->correctedErrors == 0,
+           "Clean Version 1 image should need no correction");
+
+    const auto layout =
+        qrcode::versionOneBlockLayout(clean->errorCorrectionLevel);
+    const int correctable = layout.errorCorrectionCodewords / 2;
+    const auto coordinates =
+        findDataCoordinates(pristine, version, clean->mask);
+
+    auto damaged = pristine.copy();
+    for (int error = 0; error < correctable; ++error) {
+        const int codeword =
+            error == correctable - 1 ? layout.totalCodewords() - 1 : error;
+        const auto coordinate = coordinates.at(codeword * 8);
+        damaged.flip(coordinate.x, coordinate.y);
+    }
+
+    const auto recovered = qrcode::Decoder{}.decode(damaged, version);
+    expect(recovered.has_value(),
+           "Damaged Version 1 image should be corrected");
+    expect(qrcode::MessageFormatter::format(recovered->segments) == "12345",
+           "Corrected Version 1 image message mismatch");
+    expect(recovered->correctedErrors == correctable,
+           "Corrected Version 1 image error count mismatch");
+
+    auto damagedFormat = pristine.copy();
+    constexpr std::array firstCopyCoordinates{
+        Coordinate{.x = 8, .y = 0},
+        Coordinate{.x = 8, .y = 8},
+        Coordinate{.x = 0, .y = 8},
+    };
+    const int size = damagedFormat.width();
+    const std::array secondCopyCoordinates{
+        Coordinate{.x = size - 1, .y = 8},
+        Coordinate{.x = size - 8, .y = 8},
+        Coordinate{.x = 8, .y = size - 1},
+    };
+    for (std::size_t index = 0; index < firstCopyCoordinates.size();
+         ++index) {
+        damagedFormat.flip(firstCopyCoordinates.at(index).x,
+                           firstCopyCoordinates.at(index).y);
+        damagedFormat.flip(secondCopyCoordinates.at(index).x,
+                           secondCopyCoordinates.at(index).y);
+    }
+
+    const auto recoveredFormat =
+        qrcode::Decoder{}.decode(damagedFormat, version);
+    expect(recoveredFormat.has_value(),
+           "Three damaged bits in both format copies should be corrected");
+    expect(qrcode::MessageFormatter::format(recoveredFormat->segments) ==
+               "12345",
+           "Format-corrected Version 1 image message mismatch");
+    expect(recoveredFormat->correctedFormatBits == 3,
+           "Image format correction count mismatch");
+}
+
 }  // namespace
 
 int main() {
     try {
         testBitstreamReadsSequentialBits();
         testMaskPatterns();
+        testFormatInformation();
+        testCodewordPacking();
+        testGaloisFieldArithmetic();
+        testReedSolomonIsoVector();
+        testAllVersionOneCorrectionLevels();
+        testReedSolomonInputErrors();
         testNumericSegment();
         testAlphanumericSegment();
         testPrintableByteSegment();
@@ -301,6 +704,7 @@ int main() {
         testSupportedQrVersions();
         testAlignmentPatternCenters();
         testDataModuleCountsForVersionsOneToFour();
+        testVersionOneModuleErrorCorrection();
     } catch (const std::exception& error) {
         std::cerr << "Test failure: " << error.what() << '\n';
         return 1;
