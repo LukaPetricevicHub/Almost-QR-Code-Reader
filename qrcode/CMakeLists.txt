@@ -61,9 +61,7 @@ endif()
 
 if(BUILD_TESTING)
   add_executable(qrcode_tests tests.cpp)
-  target_compile_definitions(
-    qrcode_tests PRIVATE QRCODE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(qrcode_tests PRIVATE qrcode_core stb::stb)
+  target_link_libraries(qrcode_tests PRIVATE qrcode_core)
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(qrcode_tests PRIVATE -Wall -Wextra -Wpedantic)
   endif()
