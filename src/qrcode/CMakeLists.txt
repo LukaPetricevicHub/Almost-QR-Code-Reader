@@ -38,6 +38,8 @@ add_library(
   Segments.cpp
   TextEncoding.cpp)
 target_compile_features(qrcode_core PUBLIC "cxx_std_${PROJECT_CXX_STANDARD}")
+target_include_directories(qrcode_core
+                           PUBLIC "${PROJECT_SOURCE_DIR}/include/qrcode")
 target_link_libraries(qrcode_core PUBLIC ZXing::ZXing Iconv::Iconv)
 
 add_executable(qrcode main.cpp)
@@ -49,7 +51,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 if(QRCODE_BUILD_FIXTURE_GENERATOR)
-  add_executable(qrcode_generate_fixtures generate_fixtures.cpp)
+  add_executable(
+    qrcode_generate_fixtures
+    "${PROJECT_SOURCE_DIR}/tools/qrcode/generate_fixtures.cpp")
   target_compile_features(qrcode_generate_fixtures
                           PRIVATE "cxx_std_${PROJECT_CXX_STANDARD}")
   target_link_libraries(qrcode_generate_fixtures PRIVATE ZXing::ZXing stb::stb)
@@ -60,7 +64,7 @@ if(QRCODE_BUILD_FIXTURE_GENERATOR)
 endif()
 
 if(BUILD_TESTING)
-  add_executable(qrcode_tests tests.cpp)
+  add_executable(qrcode_tests "${PROJECT_SOURCE_DIR}/tests/qrcode/tests.cpp")
   target_link_libraries(qrcode_tests PRIVATE qrcode_core)
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(qrcode_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -70,5 +74,5 @@ if(BUILD_TESTING)
     NAME qrcode_regression_tests
     COMMAND
       ${CMAKE_COMMAND} -E env QRCODE_BINARY=$<TARGET_FILE:qrcode>
-      ${CMAKE_CURRENT_SOURCE_DIR}/test_qrcode.sh)
+      "${PROJECT_SOURCE_DIR}/tests/qrcode/test_qrcode.sh")
 endif()

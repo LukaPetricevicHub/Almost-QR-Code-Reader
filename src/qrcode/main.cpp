@@ -6,7 +6,7 @@
 #include "FormatInformation.hpp"
 #include "MessageFormatter.hpp"
 #include "QrVersion.hpp"
-#include "Segments.hpp"
+
 
 #include <array>
 #include <iostream>

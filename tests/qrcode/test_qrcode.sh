@@ -3,7 +3,8 @@
 set -u
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "${script_dir}/.." && pwd)"
+repo_root="$(cd "${script_dir}/../.." && pwd)"
+fixtures_dir="${repo_root}/resources/qrcode/fixtures"
 build_dir="${BUILD_DIR:-${repo_root}/cmake-build-debug}"
 binary="${QRCODE_BINARY:-${build_dir}/qrcode/qrcode}"
 
@@ -50,7 +51,7 @@ run_case() {
     stdout_file="$(mktemp "${TMPDIR:-/tmp}/qrcode-test-stdout.XXXXXX")" || exit 2
     stderr_file="$(mktemp "${TMPDIR:-/tmp}/qrcode-test-stderr.XXXXXX")" || exit 2
 
-    "${binary}" "${script_dir}/${image}" > "${stdout_file}" 2> "${stderr_file}"
+    "${binary}" "${fixtures_dir}/${image}" > "${stdout_file}" 2> "${stderr_file}"
     status=$?
 
     decoded="$(cat "${stdout_file}")"

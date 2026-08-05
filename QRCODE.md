@@ -21,19 +21,16 @@ Implemented behavior:
 
 ## Code layout
 
-- `main.cpp`: command-line entry point, image loading, normal output, and optional debug output.
-- `Decoder.cpp`: coordinates format reading, data-bit reading, error correction, and segment decoding.
-- `FormatInformation.cpp`: reads both format copies and performs BCH nearest-pattern recovery.
-- `DataReader.cpp`: walks the QR data modules in the standard zig-zag order.
-- `Masks.cpp`: implements the 8 QR mask formulas.
-- `QrVersion.cpp`: validates Versions 1-4 and provides their sizes and alignment-pattern positions.
-- `Codewords.cpp`: converts between the module bit stream and eight-bit QR codewords.
-- `GaloisField256.cpp`: implements finite-field arithmetic for the QR primitive polynomial `0x11D`.
-- `ReedSolomon.cpp`: detects and corrects damaged Version 1 codewords.
-- `Bitstream.cpp`: reads fixed-width integer values from the decoded bit string.
-- `Segments.cpp`: parses typed QR segments and reports detailed decoding errors.
-- `TextEncoding.cpp`: maps QR Kanji values to Shift-JIS and converts them to UTF-8.
-- `MessageFormatter.cpp`: renders text segments and escapes binary byte segments.
+- `src/qrcode/`: command-line entry point and decoder implementations.
+- `include/qrcode/`: decoder headers.
+- `tests/qrcode/`: unit and command-line regression tests.
+- `resources/qrcode/fixtures/`: versioned regression images.
+- `tools/qrcode/`: fixture-generation utility.
+
+Within `src/qrcode`, `Decoder.cpp` coordinates format reading, data-bit
+reading, error correction, and segment decoding. The supporting source files
+separate matrix traversal, masking, version metadata, codewords,
+Reed-Solomon correction, segment parsing, and text formatting.
 
 ## Output
 
@@ -46,7 +43,7 @@ Normal mode writes only the decoded human-readable message to standard output:
 Pass `--debug` to additionally print the sampled bitmap, version, error-correction level, mask, correction counts, and first 16 corrected data bits:
 
 ```bash
-cmake-build-debug/qrcode/qrcode qrcode/qr01.png --debug
+cmake-build-debug/qrcode/qrcode resources/qrcode/fixtures/qr01.png --debug
 ```
 
 ## Usage
@@ -61,7 +58,7 @@ cmake --build cmake-build-debug --target qrcode
 Run one example:
 
 ```bash
-cmake-build-debug/qrcode/qrcode qrcode/qr01.png
+cmake-build-debug/qrcode/qrcode resources/qrcode/fixtures/qr01.png
 ```
 
 ## Custom fixtures
@@ -71,7 +68,7 @@ The Version 2-4 and Kanji PNGs are test fixtures generated with ZXing's independ
 ```bash
 cmake -S . -B cmake-build-debug -DPROJECT_TOPIC=QRCODE -DQRCODE_BUILD_FIXTURE_GENERATOR=ON
 cmake --build cmake-build-debug --target qrcode_generate_fixtures
-cmake-build-debug/qrcode/qrcode_generate_fixtures qrcode
+cmake-build-debug/qrcode/qrcode_generate_fixtures resources/qrcode/fixtures
 ```
 
 The generator forces each requested QR version, writes one pixel per module with a four-module quiet zone, and selects Shift-JIS so that the Japanese fixture uses QR Kanji mode. The Version 2 and 3 fixtures use error-correction level Q, Version 4 uses H, and the Kanji fixture uses L. This exercises one-, two-, and four-block codeword layouts.
@@ -94,7 +91,7 @@ ctest --test-dir cmake-build-debug --output-on-failure
 Run the script:
 
 ```bash
-qrcode/test_qrcode.sh
+tests/qrcode/test_qrcode.sh
 ```
 
 The expected result includes the five already provided Version 1 images and one regression image for each new version:

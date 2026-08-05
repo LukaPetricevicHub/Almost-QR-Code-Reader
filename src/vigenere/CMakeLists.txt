@@ -1,4 +1,5 @@
-file(COPY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/wordlist-en_US/en_US.txt"
+file(COPY_FILE
+     "${PROJECT_SOURCE_DIR}/resources/vigenere/wordlist-en-US/en_US.txt"
      "${CMAKE_CURRENT_BINARY_DIR}/en_US.txt")
 
 add_executable(vigenere main.cpp)

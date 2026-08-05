@@ -16,8 +16,7 @@
 
 namespace qrcode {
 
-using DecodeError =
-    std::variant<FormatError, CodewordError, ReedSolomonError, SegmentError>;
+using DecodeError = std::variant<FormatError, CodewordError, ReedSolomonError, SegmentError>;
 
 [[nodiscard]] std::string_view toString(const DecodeError& error);
 
